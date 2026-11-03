@@ -257,3 +257,49 @@ def test_state_rejects_other_target(tmp_path):
   state.save()
   with pytest.raises(ValueError):
     State(str(tmp_path / "s.json")).bind("c/d")
+
+
+class MergeAwareGitHub(FakeGitHub):
+  def __init__(self, **kw):
+    super().__init__(commits=("aaaaaaaaaaaa", "bbbbbbbbbbbb", "cccccccccccc"), **kw)
+
+  def first_parent(self, sha):
+    return "f" * 40
+
+
+def test_merged_pr_diffs_against_destination_before_merge():
+  pr = make_pr(1)
+  pr["merge_commit"] = {"hash": "cccccccccccc"}
+  migrator = Migrator(FakeBitbucket([pr], {}), MergeAwareGitHub(), UserMap(), State(None), Options(dry_run=True))
+  assert migrator._resolve_shas(pr)[1] == "f" * 40
+
+
+def test_fast_forward_merge_keeps_recorded_destination():
+  pr = make_pr(1)
+  pr["merge_commit"] = {"hash": pr["source"]["commit"]["hash"]}
+  migrator = Migrator(FakeBitbucket([pr], {}), MergeAwareGitHub(), UserMap(), State(None), Options(dry_run=True))
+  head, base = migrator._resolve_shas(pr)
+  assert head == "aaaaaaaaaaaa" + "0" * 28
+  assert base == "bbbbbbbbbbbb" + "0" * 28
+
+
+@pytest.mark.parametrize("text, expected", [
+  ("thanks @bob.", "thanks @bob-gh."),
+  ("@bob, @bob- and (@bob)", "@bob-gh, @bob-gh- and (@bob-gh)"),
+  ("@first.last!", "@<!-- -->first.last!"),
+])
+def test_mentions_ignore_trailing_punctuation(text, expected):
+  from bb2gh.render import convert_text
+
+  assert convert_text(text, UserMap({"bob": "bob-gh"}, notify=True)) == expected
+
+
+@pytest.mark.parametrize("text", [
+  "see https://medium.com/@bob/post#12 for details",
+  "see <https://medium.com/@bob/post> now",
+  "see [post](https://medium.com/@bob/post) now",
+])
+def test_urls_pass_through_untouched(text):
+  from bb2gh.render import convert_text
+
+  assert convert_text(text, UserMap()) == text

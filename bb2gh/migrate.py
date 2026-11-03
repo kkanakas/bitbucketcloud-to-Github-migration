@@ -99,8 +99,10 @@ class Migrator:
     if pr.get("state") == "MERGED" and merge_hash:
       # After a merge the head is already reachable from the destination tip, which GitHub rejects
       # ("no commits between"); diff against the destination as it was just before the merge instead.
+      # A fast-forward merge has no merge commit: Bitbucket reports the source tip itself, whose
+      # parent would hide every commit but the last, so keep the recorded destination instead.
       merge_sha = self.gh.resolve_commit(merge_hash)
-      before = self.gh.first_parent(merge_sha) if merge_sha else None
+      before = self.gh.first_parent(merge_sha) if merge_sha and merge_sha != head else None
       if before:
         base = before
     return head, base

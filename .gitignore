@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 bb2gh-state-*.json
 usermap.json
+build/
