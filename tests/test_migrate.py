@@ -231,3 +231,29 @@ def test_bitbucket_mentions_map_to_github_logins(tmp_path, notify, expected):
   out = convert_text("ping @{b2} and `@{b2}` in code", users)
   assert out.startswith(f"ping {expected} and")
   assert out.endswith("`@{b2}` in code")
+
+
+def test_notify_does_not_ping_unmapped_users():
+  from bb2gh.render import convert_text
+
+  users = UserMap({"bobnick": "bob-gh"}, notify=True)
+  out = convert_text("hi @bobnick and @torvalds", users)
+  assert out == "hi @bob-gh and @<!-- -->torvalds"
+
+
+def test_truncate_closes_open_fence():
+  from bb2gh.render import MAX_BODY, truncate
+
+  out = truncate("```\n" + "x" * (MAX_BODY + 10))
+  assert out.count("```") % 2 == 0
+
+
+def test_state_rejects_other_target(tmp_path):
+  import pytest
+  from bb2gh.state import State
+
+  state = State(str(tmp_path / "s.json"))
+  state.bind("a/b")
+  state.save()
+  with pytest.raises(ValueError):
+    State(str(tmp_path / "s.json")).bind("c/d")

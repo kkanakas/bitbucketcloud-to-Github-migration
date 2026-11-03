@@ -48,3 +48,24 @@ def test_absolute_next_links_pass_through():
   session = FakeSession([FakeResponse(200, '{"values": []}')])
   HttpClient("https://api.bitbucket.org/2.0", session).request("GET", "https://api.bitbucket.org/2.0/next?page=2")
   assert session.urls == ["https://api.bitbucket.org/2.0/next?page=2"]
+
+
+def test_post_is_not_retried_on_network_error():
+  import pytest
+  import requests
+  from bb2gh.http import HttpClient
+
+  class S:
+    calls = 0
+
+    def request(self, *a, **k):
+      S.calls += 1
+      raise requests.ConnectionError("boom")
+
+  client = HttpClient("http://x", S(), sleep=lambda s: None)
+  with pytest.raises(requests.ConnectionError):
+    client.request("POST", "/a")
+  assert S.calls == 1
+  with pytest.raises(requests.ConnectionError):
+    client.request("GET", "/a")
+  assert S.calls == 1 + 6

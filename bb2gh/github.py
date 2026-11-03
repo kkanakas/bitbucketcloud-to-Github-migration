@@ -43,6 +43,15 @@ class GitHubClient:
         return None
       raise
 
+  def first_parent(self, sha):
+    try:
+      parents = self._req("GET", f"/commits/{quote(sha)}")["parents"]
+    except ApiError as err:
+      if err.status in (404, 422):
+        return None
+      raise
+    return parents[0]["sha"] if parents else None
+
   def branch_exists(self, name):
     try:
       self._req("GET", f"/git/ref/heads/{quote(name, safe='/')}")

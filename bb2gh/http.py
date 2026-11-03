@@ -8,6 +8,7 @@ import requests
 log = logging.getLogger(__name__)
 
 RETRYABLE_STATUS = {500, 502, 503, 504}
+IDEMPOTENT = {"GET", "HEAD", "PUT", "PATCH", "DELETE"}
 
 
 class ApiError(Exception):
@@ -29,8 +30,17 @@ class HttpClient:
     url = path if path.startswith("http") else f"{self.base_url}{path}"
     resp = None
     for attempt in range(self.max_retries + 1):
-      resp = self.session.request(method, url, timeout=self.timeout, **kwargs)
-      wait = self._retry_wait(resp, attempt)
+      try:
+        resp = self.session.request(method, url, timeout=self.timeout, **kwargs)
+      except requests.RequestException as err:
+        # A failed write may still have been applied server-side, so only idempotent calls are retried.
+        if method.upper() not in IDEMPOTENT or attempt >= self.max_retries:
+          raise
+        wait = min(2 ** attempt, 60)
+        log.warning(f"{method} {url} failed ({err}); retrying in {wait}s")
+        self.sleep(wait)
+        continue
+      wait = self._retry_wait(resp, attempt, method)
       if wait is None:
         break
       log.warning(f"{method} {url} returned {resp.status_code}; retrying in {wait:.0f}s")
@@ -41,11 +51,13 @@ class HttpClient:
       return None
     return resp.json()
 
-  def _retry_wait(self, resp, attempt):
+  def _retry_wait(self, resp, attempt, method="GET"):
     if attempt >= self.max_retries:
       return None
     code = resp.status_code
     if code in RETRYABLE_STATUS:
+      if method.upper() not in IDEMPOTENT:
+        return None  # the write may have been applied; retrying could duplicate it
       return min(2 ** attempt, 60)
     rate_limited = code == 429 or (
       code == 403

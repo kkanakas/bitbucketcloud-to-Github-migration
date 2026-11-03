@@ -48,6 +48,9 @@ class Migrator:
       except ApiError as err:
         log.error(f"PR #{pr_id} failed: {err}")
         counts["failed"] += 1
+      except Exception:
+        log.exception(f"PR #{pr_id} failed unexpectedly")
+        counts["failed"] += 1
     return counts
 
   def migrate_pr(self, pr_id):
@@ -65,6 +68,7 @@ class Migrator:
 
     if not rec.get("number"):
       self._create_target(pr, rec)
+      self.sleep(self.opts.delay)
     self._migrate_comments(comments, rec)
     self._finalize(pr, rec)
     log.info(f"PR #{pr_id} ({pr['state']}) -> {rec['kind']} #{rec['number']} with {len(comments)} comment(s)")
@@ -89,10 +93,17 @@ class Migrator:
     return f"dry-run-{kind}"
 
   def _resolve_shas(self, pr):
-    return (
-      self.gh.resolve_commit(pr.get("source", {}).get("commit", {}).get("hash")),
-      self.gh.resolve_commit(pr.get("destination", {}).get("commit", {}).get("hash")),
-    )
+    head = self.gh.resolve_commit(pr.get("source", {}).get("commit", {}).get("hash"))
+    base = self.gh.resolve_commit(pr.get("destination", {}).get("commit", {}).get("hash"))
+    merge_hash = (pr.get("merge_commit") or {}).get("hash")
+    if pr.get("state") == "MERGED" and merge_hash:
+      # After a merge the head is already reachable from the destination tip, which GitHub rejects
+      # ("no commits between"); diff against the destination as it was just before the merge instead.
+      merge_sha = self.gh.resolve_commit(merge_hash)
+      before = self.gh.first_parent(merge_sha) if merge_sha else None
+      if before:
+        base = before
+    return head, base
 
   def _create_target(self, pr, rec):
     head_sha, base_sha = self._resolve_shas(pr)

@@ -74,11 +74,16 @@ def cmd_migrate(args):
     with open(args.user_map, encoding="utf-8") as fh:
       mapping = json.load(fh)
   state_file = args.state_file or f"bb2gh-state-{args.bitbucket_workspace}-{args.bitbucket_repo}.json"
+  state = State(None if args.dry_run else state_file)
+  try:
+    state.bind(args.github_repo.lower())
+  except ValueError as err:
+    raise SystemExit(str(err))
   migrator = Migrator(
     bitbucket_client(args),
     GitHubClient.from_token(args.github_repo, token, args.github_api_url),
     UserMap(mapping, notify=args.notify_users),
-    State(None if args.dry_run else state_file),
+    state,
     Options(
       dry_run=args.dry_run,
       keep_branches=args.keep_branches,

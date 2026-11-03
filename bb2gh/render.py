@@ -1,7 +1,7 @@
 """Turn Bitbucket PR data into GitHub-flavored Markdown."""
 
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 MAX_BODY = 65000  # GitHub rejects bodies above 65536 characters
 
@@ -53,7 +53,10 @@ def fmt_date(value):
   if not value:
     return "unknown date"
   try:
-    return datetime.fromisoformat(value).strftime("%Y-%m-%d %H:%M UTC")
+    parsed = datetime.fromisoformat(value)
+    if parsed.tzinfo:
+      parsed = parsed.astimezone(timezone.utc)
+    return parsed.strftime("%Y-%m-%d %H:%M UTC")
   except ValueError:
     return value
 
@@ -66,11 +69,20 @@ def convert_text(text, users):
   """Rewrite mentions and #refs outside code so GitHub does not ping or link the wrong things."""
   parts = CODE_SPLIT.split(text or "")
   for i in range(0, len(parts), 2):  # even indexes sit outside code spans
-    part = BB_MENTION.sub(lambda m: _bb_mention(m.group(1), users), parts[i])
-    if not users.notify:
-      part = PLAIN_MENTION.sub(r"@<!-- -->\1", part)
+    part = PLAIN_MENTION.sub(lambda m: _plain_mention(m.group(1), users), parts[i])
+    part = BB_MENTION.sub(lambda m: _bb_mention(m.group(1), users), part)
     parts[i] = ISSUE_REF.sub(r"#<!-- -->\1", part)
   return "".join(parts)
+
+
+def _plain_mention(name, users):
+  """Only mapped users may become real mentions; anything else is defused so nobody random is pinged."""
+  login = users.login_for({"nickname": name})
+  if login and users.notify:
+    return f"@{login}"
+  if login:
+    return f"`{login}`"
+  return f"@<!-- -->{name}"
 
 
 def _bb_mention(user_id, users):
@@ -84,7 +96,17 @@ def _bb_mention(user_id, users):
 def truncate(body):
   if len(body) <= MAX_BODY:
     return body
-  return body[:MAX_BODY] + "\n\n_[truncated during migration]_"
+  cut = body[:MAX_BODY]
+  if cut.count("```") % 2:
+    cut += "\n```"
+  return cut + "\n\n_[truncated during migration]_"
+
+
+def code(text):
+  """Inline code span that survives backticks inside the text."""
+  text = str(text)
+  fence = "``" if "`" in text else "`"
+  return f"{fence} {text} {fence}" if "`" in text else f"`{text}`"
 
 
 def pr_link(pr):
@@ -141,9 +163,9 @@ def comment_body(comment, users, context=None):
 
 
 def inline_context(inline):
-  path = inline.get("path", "?")
+  path = code(inline.get("path", "?"))
   if inline.get("to"):
-    return f"On `{path}` line {inline['to']}"
+    return f"On {path} line {inline['to']}"
   if inline.get("from"):
-    return f"On `{path}` line {inline['from']} (old version)"
-  return f"On `{path}`"
+    return f"On {path} line {inline['from']} (old version)"
+  return f"On {path}"

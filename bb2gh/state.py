@@ -12,6 +12,12 @@ class State:
       with open(path, encoding="utf-8") as fh:
         self.data = json.load(fh)
 
+  def bind(self, target):
+    """Tie the state file to one target repository so it is never reused for another."""
+    current = self.data.setdefault("target", target)
+    if current != target:
+      raise ValueError(f"State file belongs to {current}, not {target}; use a different --state-file")
+
   def pr(self, pr_id):
     return self.data["prs"].setdefault(str(pr_id), {"comments": {}, "branches": [], "done": False})
 
