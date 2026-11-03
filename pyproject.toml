@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bb2gh"
+version = "0.1.0"
+description = "Migrate pull request history from Bitbucket Cloud to GitHub Enterprise"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["requests>=2.31"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+bb2gh = "bb2gh.cli:main"
+
+[tool.setuptools]
+packages = ["bb2gh"]
