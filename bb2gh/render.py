@@ -5,9 +5,11 @@ from datetime import datetime, timezone
 
 MAX_BODY = 65000  # GitHub rejects bodies above 65536 characters
 
-CODE_SPLIT = re.compile(r"(```.*?```|`[^`\n]*`)", re.DOTALL)
+# Code spans, fenced blocks and URLs pass through untouched.
+CODE_SPLIT = re.compile(r"(```.*?```|`[^`\n]*`|<https?://[^>\s]+>|https?://[^\s<>)\]]+)", re.DOTALL)
 BB_MENTION = re.compile(r"@\{([^}]+)\}")
-PLAIN_MENTION = re.compile(r"(?<![\w`])@([A-Za-z0-9][\w.-]*)")
+# Names may hold dots and dashes but never end with one, so "@bob." matches "bob".
+PLAIN_MENTION = re.compile(r"(?<![\w`])@([A-Za-z0-9](?:[\w.-]*\w)?)")
 ISSUE_REF = re.compile(r"(?<![\w&/])#(\d+)")
 
 
